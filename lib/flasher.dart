@@ -115,6 +115,14 @@ class Flasher {
     return false;
   }
 
+  Future<CmdResult> runApply() async {
+    final r = await sh('su -c "sh $remoteDir/apply.sh"', timeout: const Duration(minutes: 15));
+    for (final l in r.out.split('\n')) {
+      if (l.trim().isNotEmpty) log('  $l');
+    }
+    return r;
+  }
+
   /// Returns null on success, or an error message.
   Future<String?> run({bool force = false}) async {
     log('Подключение к $serial…');
@@ -140,10 +148,18 @@ class Flasher {
     log(push.out.split('\n').last);
 
     log('Запись системы…');
-    final apply = await sh('su -c "sh $remoteDir/apply.sh"',
-        timeout: const Duration(minutes: 15));
-    for (final l in apply.out.split('\n')) {
-      if (l.trim().isNotEmpty) log('  $l');
+    var apply = await runApply();
+    if (!apply.out.contains('DONE') && apply.out.contains('no space')) {
+      // Files of running apps stay allocated after deletion; a reboot frees them.
+      log('Не хватило места на /system — перезагружаю приставку и повторяю…');
+      await sh('reboot', timeout: const Duration(seconds: 20));
+      await adb(['disconnect', serial], timeout: const Duration(seconds: 10));
+      await Future.delayed(const Duration(seconds: 40));
+      if (!await waitBoot(const Duration(minutes: 8))) {
+        return 'Приставка не вернулась после перезагрузки';
+      }
+      await Future.delayed(const Duration(seconds: 10));
+      apply = await runApply();
     }
     if (!apply.out.contains('DONE')) return 'Скрипт apply.sh не завершился';
 
