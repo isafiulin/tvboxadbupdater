@@ -88,9 +88,13 @@ class _HomeState extends State<Home> {
         } else if (fp != stockFingerprint) {
           b.status = 'Другая прошивка';
           b.selected = false;
+          b.log.add('Сборка: $fp');
+        } else {
+          b.status = 'Можно прошивать';
         }
       } else {
         b.info = 'нет ответа ADB';
+        b.status = 'Нет ADB';
         b.selected = false;
       }
       setState(() => boxes.add(b));

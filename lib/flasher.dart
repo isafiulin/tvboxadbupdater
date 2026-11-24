@@ -90,14 +90,25 @@ class Flasher {
 
   Future<String> prop(String name) async => (await sh('getprop $name')).out.trim();
 
-  Future<bool> connect({int tries = 5}) async {
+  Future<bool> connect({int tries = 5, bool verbose = false}) async {
     for (var i = 0; i < tries; i++) {
+      if (i == 0 && verbose) {
+        // First call on a PC starts the adb server; give it time and show what happened.
+        final v = await adb(['start-server'], timeout: const Duration(seconds: 30));
+        log('adb start-server: ${v.code == 0 ? 'ok' : 'код ${v.code}'} ${v.out}');
+      }
       await adb(['disconnect', serial], timeout: const Duration(seconds: 10));
-      final r = await adb(['connect', serial], timeout: const Duration(seconds: 15));
+      final r = await adb(['connect', serial], timeout: const Duration(seconds: 20));
+      if (verbose) log('adb connect (попытка ${i + 1}/$tries): ${r.code == -1 ? 'таймаут' : r.out}');
       if (r.out.contains('connected to')) {
         final st = await adb(['-s', serial, 'get-state'],
             timeout: const Duration(seconds: 10));
-        if (st.out.trim() == 'device') return true;
+        final s = st.out.trim();
+        if (verbose) log('состояние: ${s.isEmpty ? 'нет ответа (${st.code})' : s}');
+        if (s == 'device') return true;
+        if (s.contains('unauthorized')) {
+          log('Приставка просит подтвердить отладку на экране — нажмите «ОК» пультом');
+        }
       }
       await Future.delayed(const Duration(seconds: 3));
     }
@@ -126,7 +137,11 @@ class Flasher {
   /// Returns null on success, or an error message.
   Future<String?> run({bool force = false}) async {
     log('Подключение к $serial…');
-    if (!await connect()) return 'Нет связи по ADB (порт 5555). Приставка включена и в сети?';
+    log('ADB: ${env.adb}');
+    if (!await connect(verbose: true)) {
+      return 'Нет связи по ADB (порт 5555). Если состояние «offline» — отключите ADB '
+          'на других компьютерах и перезагрузите приставку.';
+    }
 
     final model = await prop('ro.product.model');
     final fp = await prop('ro.build.fingerprint');
